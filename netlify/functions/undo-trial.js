@@ -1,5 +1,19 @@
 import { getStore } from "@netlify/blobs";
 
+function recountCompleted(trials, targetMap) {
+  const countMap = {};
+  for (const t of trials) {
+    countMap[t.dimension] = (countMap[t.dimension] || 0) + 1;
+  }
+
+  for (const dimKey of Object.keys(targetMap || {})) {
+    if ((countMap[dimKey] || 0) < targetMap[dimKey]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default async (req, context) => {
   try {
     const body = await req.json();
@@ -8,10 +22,10 @@ export default async (req, context) => {
     const trialsStore = getStore("trials");
     const sessionsStore = getStore("sessions");
     const metaStore = getStore("meta");
-    const exportStore = getStore("exports");
+    const participantsStore = getStore("participants");
 
-    const raw = await trialsStore.get(participantId);
-    const participantTrials = raw ? JSON.parse(raw) : [];
+    const participantTrials =
+      (await trialsStore.get(participantId, { type: "json" })) || [];
 
     let lastIndex = -1;
     for (let i = participantTrials.length - 1; i >= 0; i--) {
@@ -33,43 +47,51 @@ export default async (req, context) => {
 
     const removed = participantTrials[lastIndex];
     participantTrials.splice(lastIndex, 1);
-    await trialsStore.set(participantId, JSON.stringify(participantTrials));
+    await trialsStore.setJSON(participantId, participantTrials);
 
-    const rawSession = await sessionsStore.get(participantId);
-    const sessionData = rawSession ? JSON.parse(rawSession) : null;
+    const sessionData = await sessionsStore.get(participantId, { type: "json" });
     if (sessionData) {
       if (!sessionData.redoMap) sessionData.redoMap = {};
       sessionData.redoMap[dimension] = {
         leftImage: removed.leftImage,
         rightImage: removed.rightImage
       };
-      await sessionsStore.set(participantId, JSON.stringify(sessionData));
+      await sessionsStore.setJSON(participantId, sessionData);
     }
 
     const statsKey = `stats_${dimension}`;
-    const rawStats = await metaStore.get(statsKey);
-    const stats = rawStats ? JSON.parse(rawStats) : { imageCounts: {}, pairCounts: {} };
+    const stats =
+      (await metaStore.get(statsKey, { type: "json" })) || {
+        imageCounts: {},
+        pairCounts: {}
+      };
 
-    stats.imageCounts[removed.leftImage] = Math.max(0, (stats.imageCounts[removed.leftImage] || 0) - 1);
-    stats.imageCounts[removed.rightImage] = Math.max(0, (stats.imageCounts[removed.rightImage] || 0) - 1);
-    stats.pairCounts[removed.pairKey] = Math.max(0, (stats.pairCounts[removed.pairKey] || 0) - 1);
+    stats.imageCounts[removed.leftImage] = Math.max(
+      0,
+      (stats.imageCounts[removed.leftImage] || 0) - 1
+    );
+    stats.imageCounts[removed.rightImage] = Math.max(
+      0,
+      (stats.imageCounts[removed.rightImage] || 0) - 1
+    );
+    stats.pairCounts[removed.pairKey] = Math.max(
+      0,
+      (stats.pairCounts[removed.pairKey] || 0) - 1
+    );
 
-    await metaStore.set(statsKey, JSON.stringify(stats));
+    await metaStore.setJSON(statsKey, stats);
 
-    const rawExport = await exportStore.get("rawTrials");
-    const allTrials = rawExport ? JSON.parse(rawExport) : [];
-    for (let i = allTrials.length - 1; i >= 0; i--) {
-      const t = allTrials[i];
-      if (
-        t.participantId === removed.participantId &&
-        t.dimension === removed.dimension &&
-        t.submittedAt === removed.submittedAt
-      ) {
-        allTrials.splice(i, 1);
-        break;
-      }
+    const participantMeta = await participantsStore.get(participantId, { type: "json" });
+    if (participantMeta) {
+      participantMeta.completed = recountCompleted(
+        participantTrials,
+        participantMeta.targetMap || {}
+      );
+      participantMeta.completedAt = participantMeta.completed
+        ? participantMeta.completedAt
+        : null;
+      await participantsStore.setJSON(participantId, participantMeta);
     }
-    await exportStore.set("rawTrials", JSON.stringify(allTrials));
 
     const dimTrialsAfterUndo = participantTrials.filter((t) => t.dimension === dimension);
 
