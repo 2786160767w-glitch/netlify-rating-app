@@ -8,22 +8,33 @@ export default async (req, context) => {
 
     const participantsStore = getStore("participants");
     const sessionsStore = getStore("sessions");
+    const trialsStore = getStore("trials");
+
+    const dimensions = body.dimensions || [];
 
     await participantsStore.setJSON(participantId, {
       participantId,
       majorType: body.majorType,
       grade: body.grade,
       note: body.note || "",
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      completed: false,
+      completedAt: null,
+      targetMap: Object.fromEntries(
+        dimensions.map((d) => [d.key, d.targetTrials])
+      )
     });
 
     await sessionsStore.setJSON(participantId, {
       participantId,
       images: body.images || [],
-      dimensions: body.dimensions || [],
+      dimensions,
       redoMap: {},
       startedAt: new Date().toISOString()
     });
+
+    // 每个 participant 独立存自己的记录
+    await trialsStore.setJSON(participantId, []);
 
     return new Response(
       JSON.stringify({ participantId }),
