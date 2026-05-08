@@ -62,8 +62,8 @@ export default async (req, context) => {
     const sessionsStore = getStore("sessions");
     const metaStore = getStore("meta");
 
-    const rawTrials = await trialsStore.get(participantId);
-    const participantTrials = rawTrials ? JSON.parse(rawTrials) : [];
+    const rawTrials = await trialsStore.get(participantId, { type: "json" });
+    const participantTrials = rawTrials || [];
     const dimTrials = participantTrials.filter((t) => t.dimension === dimension);
 
     if (dimTrials.length >= targetTrials) {
@@ -76,9 +76,7 @@ export default async (req, context) => {
       );
     }
 
-    const rawSession = await sessionsStore.get(participantId);
-    const sessionData = rawSession ? JSON.parse(rawSession) : null;
-
+    const sessionData = await sessionsStore.get(participantId, { type: "json" });
     if (!sessionData) {
       throw new Error("session not found");
     }
@@ -102,10 +100,9 @@ export default async (req, context) => {
     }
 
     const statsKey = `stats_${dimension}`;
-    const rawStats = await metaStore.get(statsKey);
-    let stats = rawStats ? JSON.parse(rawStats) : initStats(images);
+    const rawStats = await metaStore.get(statsKey, { type: "json" });
+    let stats = rawStats || initStats(images);
 
-    // 防止后面换图时缺字段
     images.forEach((img) => {
       if (stats.imageCounts[img] === undefined) {
         stats.imageCounts[img] = 0;
