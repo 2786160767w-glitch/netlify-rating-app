@@ -202,7 +202,8 @@ async function undoLastTrial() {
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
       participantId: participant.participantId,
-      dimension: dim.key
+      dimension: dim.key,
+      targetTrials: dim.targetTrials
     })
   });
 
@@ -212,8 +213,31 @@ async function undoLastTrial() {
     return;
   }
 
-  await loadTrial();
+  currentTrial = {
+    leftImage: data.leftImage,
+    rightImage: data.rightImage,
+    servedAt: data.servedAt
+  };
+
+  participantText.textContent = `受试者编号：${participant.participantId}`;
+  progressText.textContent = `进度：${data.progress}/${data.total}`;
+  promptText.textContent = `以下两张图片中，哪一张你认为更具有${dim.label}？`;
+
+  leftImg.src = `./images/${data.leftImage}`;
+  rightImg.src = `./images/${data.rightImage}`;
+
+  if (data.canUndo) {
+    undoBtn.classList.remove("hidden");
+  } else {
+    undoBtn.classList.add("hidden");
+  }
+
+  intro.classList.add("hidden");
+  moduleIntro.classList.add("hidden");
+  doneSection.classList.add("hidden");
+  trialSection.classList.remove("hidden");
 }
+
 
 document.getElementById("startBtn").addEventListener("click", startExperiment);
 enterModuleBtn.addEventListener("click", loadTrial);
