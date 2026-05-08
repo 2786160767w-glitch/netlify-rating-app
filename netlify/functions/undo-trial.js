@@ -3,7 +3,7 @@ import { getStore } from "@netlify/blobs";
 export default async (req, context) => {
   try {
     const body = await req.json();
-    const { participantId, dimension } = body;
+    const { participantId, dimension, targetTrials } = body;
 
     const trialsStore = getStore("trials");
     const sessionsStore = getStore("sessions");
@@ -71,8 +71,18 @@ export default async (req, context) => {
     }
     await exportStore.set("rawTrials", JSON.stringify(allTrials));
 
+    const dimTrialsAfterUndo = participantTrials.filter((t) => t.dimension === dimension);
+
     return new Response(
-      JSON.stringify({ ok: true }),
+      JSON.stringify({
+        ok: true,
+        leftImage: removed.leftImage,
+        rightImage: removed.rightImage,
+        servedAt: new Date().toISOString(),
+        progress: dimTrialsAfterUndo.length + 1,
+        total: targetTrials,
+        canUndo: dimTrialsAfterUndo.length > 0
+      }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" }
