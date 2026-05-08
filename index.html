@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>滨水景观主观评价实验</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>滨水景观视觉质量主观评价实验</h1>
+
+    <section id="intro" class="card">
+      <p>本实验包含三个维度：吸引力、舒适性、自然性。</p>
+      <p>请先浏览图片缩略图，再开始作答。</p>
+
+      <label>是否为相关专业学生</label>
+      <select id="majorType">
+        <option value="">请选择</option>
+        <option value="related">相关专业</option>
+        <option value="non_related">非相关专业</option>
+      </select>
+
+      <label>年级</label>
+      <input id="grade" placeholder="如：研一 / 本科三年级" />
+
+      <label>备注（可空）</label>
+      <input id="note" placeholder="可留空" />
+
+      <button id="startBtn">开始实验</button>
+    </section>
+
+    <section class="card">
+      <h2>图片预览</h2>
+      <div id="thumbGrid" class="thumb-grid"></div>
+    </section>
+
+    <section id="moduleIntro" class="card hidden">
+      <h2 id="moduleTitle"></h2>
+      <p id="moduleInstruction"></p>
+      <button id="enterModuleBtn">进入本模块</button>
+    </section>
+
+    <section id="trialSection" class="card hidden">
+      <div class="meta">
+        <span id="participantText"></span>
+        <span id="progressText"></span>
+      </div>
+      <h2 id="promptText"></h2>
+
+      <div class="trial-grid">
+        <div class="img-card">
+          <img id="leftImg" alt="左图" />
+          <button id="chooseLeft">选择左图</button>
+        </div>
+        <div class="img-card">
+          <img id="rightImg" alt="右图" />
+          <button id="chooseRight">选择右图</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="doneSection" class="card hidden">
+      <h2>已完成</h2>
+      <p>感谢参与。</p>
+      <p id="doneText"></p>
+    </section>
+  </div>
+
+  <script src="./app.js" type="module"></script>
+</body>
+</html>
