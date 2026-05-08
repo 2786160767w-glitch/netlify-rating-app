@@ -15,6 +15,20 @@ function initStats(images = []) {
   };
 }
 
+function isParticipantCompleted(trials, targetMap) {
+  const countMap = {};
+  for (const t of trials) {
+    countMap[t.dimension] = (countMap[t.dimension] || 0) + 1;
+  }
+
+  for (const dimKey of Object.keys(targetMap)) {
+    if ((countMap[dimKey] || 0) < targetMap[dimKey]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default async (req, context) => {
   try {
     const body = await req.json();
@@ -37,10 +51,10 @@ export default async (req, context) => {
     const trialsStore = getStore("trials");
     const sessionsStore = getStore("sessions");
     const metaStore = getStore("meta");
-    const exportStore = getStore("exports");
+    const participantsStore = getStore("participants");
 
-    const raw = await trialsStore.get(participantId);
-    const participantTrials = raw ? JSON.parse(raw) : [];
+    const participantTrials =
+      (await trialsStore.get(participantId, { type: "json" })) || [];
 
     const record = {
       participantId,
@@ -56,32 +70,43 @@ export default async (req, context) => {
     };
 
     participantTrials.push(record);
-    await trialsStore.set(participantId, JSON.stringify(participantTrials));
+    await trialsStore.setJSON(participantId, participantTrials);
 
-    const rawSession = await sessionsStore.get(participantId);
-    const sessionData = rawSession ? JSON.parse(rawSession) : null;
+    const sessionData = await sessionsStore.get(participantId, { type: "json" });
     if (sessionData && sessionData.redoMap && sessionData.redoMap[dimension]) {
       delete sessionData.redoMap[dimension];
-      await sessionsStore.set(participantId, JSON.stringify(sessionData));
+      await sessionsStore.setJSON(participantId, sessionData);
     }
 
     const statsKey = `stats_${dimension}`;
-    const rawStats = await metaStore.get(statsKey);
-    const stats = rawStats ? JSON.parse(rawStats) : initStats();
+    const rawStats = await metaStore.get(statsKey, { type: "json" });
+    const stats = rawStats || initStats();
 
     stats.imageCounts[leftImage] = (stats.imageCounts[leftImage] || 0) + 1;
     stats.imageCounts[rightImage] = (stats.imageCounts[rightImage] || 0) + 1;
     stats.pairCounts[record.pairKey] = (stats.pairCounts[record.pairKey] || 0) + 1;
 
-    await metaStore.set(statsKey, JSON.stringify(stats));
+    await metaStore.setJSON(statsKey, stats);
 
-    const rawExport = await exportStore.get("rawTrials");
-    const allTrials = rawExport ? JSON.parse(rawExport) : [];
-    allTrials.push(record);
-    await exportStore.set("rawTrials", JSON.stringify(allTrials));
+    const participantMeta = await participantsStore.get(participantId, { type: "json" });
+    if (!participantMeta) {
+      throw new Error("participant meta not found");
+    }
+
+    const completed = isParticipantCompleted(
+      participantTrials,
+      participantMeta.targetMap || {}
+    );
+
+    participantMeta.completed = completed;
+    participantMeta.completedAt = completed ? new Date().toISOString() : null;
+    await participantsStore.setJSON(participantId, participantMeta);
 
     return new Response(
-      JSON.stringify({ ok: true }),
+      JSON.stringify({
+        ok: true,
+        completed
+      }),
       {
         status: 200,
         headers: { "Content-Type": "application/json" }
