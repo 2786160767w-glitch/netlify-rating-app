@@ -21,6 +21,7 @@ export default async (req, context) => {
       participantId,
       images: body.images || [],
       dimensions: body.dimensions || [],
+      redoMap: {},
       startedAt: new Date().toISOString()
     });
 
