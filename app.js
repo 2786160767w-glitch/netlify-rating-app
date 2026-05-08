@@ -64,6 +64,7 @@ const progressText = document.getElementById("progressText");
 const promptText = document.getElementById("promptText");
 const leftImg = document.getElementById("leftImg");
 const rightImg = document.getElementById("rightImg");
+const undoBtn = document.getElementById("undoBtn");
 
 function renderThumbs() {
   thumbGrid.innerHTML = "";
@@ -106,7 +107,13 @@ async function startExperiment() {
     })
   });
 
-  participant = await res.json();
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.message || "开始实验失败");
+    return;
+  }
+
+  participant = data;
   currentDimensionIndex = 0;
   showModuleIntro();
 }
@@ -127,10 +134,16 @@ async function loadTrial() {
 
   const data = await res.json();
 
+  if (!res.ok) {
+    alert(data.message || "获取题目失败");
+    return;
+  }
+
   if (data.doneDimension) {
     currentDimensionIndex += 1;
     if (currentDimensionIndex >= DIMENSIONS.length) {
       trialSection.classList.add("hidden");
+      moduleIntro.classList.add("hidden");
       doneSection.classList.remove("hidden");
       document.getElementById("doneText").textContent = `受试者编号：${participant.participantId}`;
       return;
@@ -141,6 +154,7 @@ async function loadTrial() {
 
   currentTrial = data;
   moduleIntro.classList.add("hidden");
+  intro.classList.add("hidden");
   trialSection.classList.remove("hidden");
 
   participantText.textContent = `受试者编号：${participant.participantId}`;
@@ -149,11 +163,17 @@ async function loadTrial() {
 
   leftImg.src = `./images/${data.leftImage}`;
   rightImg.src = `./images/${data.rightImage}`;
+
+  if (data.canUndo) {
+    undoBtn.classList.remove("hidden");
+  } else {
+    undoBtn.classList.add("hidden");
+  }
 }
 
 async function submitChoice(choice) {
   const dim = DIMENSIONS[currentDimensionIndex];
-  await fetch("/api/submit-trial", {
+  const res = await fetch("/api/submit-trial", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({
@@ -166,6 +186,32 @@ async function submitChoice(choice) {
     })
   });
 
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.message || "提交失败");
+    return;
+  }
+
+  await loadTrial();
+}
+
+async function undoLastTrial() {
+  const dim = DIMENSIONS[currentDimensionIndex];
+  const res = await fetch("/api/undo-trial", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      participantId: participant.participantId,
+      dimension: dim.key
+    })
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.message || "退回失败");
+    return;
+  }
+
   await loadTrial();
 }
 
@@ -173,5 +219,6 @@ document.getElementById("startBtn").addEventListener("click", startExperiment);
 enterModuleBtn.addEventListener("click", loadTrial);
 document.getElementById("chooseLeft").addEventListener("click", () => submitChoice("left"));
 document.getElementById("chooseRight").addEventListener("click", () => submitChoice("right"));
+undoBtn.addEventListener("click", undoLastTrial);
 
 renderThumbs();
