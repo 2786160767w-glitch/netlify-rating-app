@@ -19,7 +19,7 @@ body {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 label {
@@ -37,6 +37,14 @@ input, select, button {
 
 button {
   cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: #1f7aec;
+  color: #fff;
+}
+
+button.secondary {
+  background: #777;
 }
 
 .thumb-grid {
@@ -71,6 +79,12 @@ button {
   justify-content: space-between;
   color: #666;
   margin-bottom: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.actions {
+  margin-top: 12px;
 }
 
 @media (max-width: 768px) {
