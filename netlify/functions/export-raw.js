@@ -1,10 +1,6 @@
 import { getStore } from "@netlify/blobs";
 
 function toCsv(rows) {
-  if (!rows.length) {
-    return "participantId,dimension,leftImage,rightImage,choice,chosenImage,servedAt,submittedAt,responseTime,pairKey\n";
-  }
-
   const headers = [
     "participantId",
     "dimension",
@@ -44,9 +40,34 @@ export default async (req, context) => {
       return new Response("Unauthorized", { status: 401 });
     }
 
-    const exportStore = getStore("exports");
-    const rawExport = await exportStore.get("rawTrials");
-    const allTrials = rawExport ? JSON.parse(rawExport) : [];
+    const participantsStore = getStore("participants");
+    const trialsStore = getStore("trials");
+
+    const listed = await participantsStore.list();
+    const completedParticipantIds = [];
+
+    for (const item of listed.blobs) {
+      const meta = await participantsStore.get(item.key, { type: "json" });
+      if (meta && meta.completed === true) {
+        completedParticipantIds.push(item.key);
+      }
+    }
+
+    let allTrials = [];
+    for (const participantId of completedParticipantIds) {
+      const trials = await trialsStore.get(participantId, { type: "json" });
+      if (Array.isArray(trials)) {
+        allTrials.push(...trials);
+      }
+    }
+
+    // 按 participantId + submittedAt 排序，导出更整齐
+    allTrials.sort((a, b) => {
+      if (a.participantId !== b.participantId) {
+        return a.participantId.localeCompare(b.participantId);
+      }
+      return String(a.submittedAt).localeCompare(String(b.submittedAt));
+    });
 
     const csv = toCsv(allTrials);
 
@@ -54,7 +75,7 @@ export default async (req, context) => {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": "attachment; filename=\"raw_trials.csv\""
+        "Content-Disposition": "attachment; filename=\"completed_raw_trials.csv\""
       }
     });
   } catch (error) {
