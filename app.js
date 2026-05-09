@@ -49,6 +49,11 @@ let participant = null;
 let currentDimensionIndex = 0;
 let currentTrial = null;
 
+let isLoadingTrial = false;
+let isSubmittingChoice = false;
+let isUndoingTrial = false;
+let requestSeq = 0;
+
 const thumbGrid = document.getElementById("thumbGrid");
 const intro = document.getElementById("intro");
 const moduleIntro = document.getElementById("moduleIntro");
@@ -66,6 +71,10 @@ const leftImg = document.getElementById("leftImg");
 const rightImg = document.getElementById("rightImg");
 const undoBtn = document.getElementById("undoBtn");
 
+const startBtn = document.getElementById("startBtn");
+const chooseLeftBtn = document.getElementById("chooseLeft");
+const chooseRightBtn = document.getElementById("chooseRight");
+
 function renderThumbs() {
   thumbGrid.innerHTML = "";
   IMAGE_LIST.forEach((img) => {
@@ -73,6 +82,41 @@ function renderThumbs() {
     div.innerHTML = `<img src="./images/${img}" alt="${img}" />`;
     thumbGrid.appendChild(div);
   });
+}
+
+function setActionDisabled(disabled) {
+  startBtn.disabled = disabled;
+  enterModuleBtn.disabled = disabled;
+  chooseLeftBtn.disabled = disabled;
+  chooseRightBtn.disabled = disabled;
+  undoBtn.disabled = disabled || undoBtn.classList.contains("hidden");
+}
+
+function renderTrialScreen(dim, data) {
+  currentTrial = {
+    trialId: data.trialId,
+    leftImage: data.leftImage,
+    rightImage: data.rightImage,
+    servedAt: data.servedAt
+  };
+
+  participantText.textContent = `受试者编号：${participant.participantId}`;
+  progressText.textContent = `进度：${data.progress}/${data.total}`;
+  promptText.textContent = `以下两张图片中，哪一张你认为更具有${dim.label}？`;
+
+  leftImg.src = `./images/${data.leftImage}`;
+  rightImg.src = `./images/${data.rightImage}`;
+
+  if (data.canUndo) {
+    undoBtn.classList.remove("hidden");
+  } else {
+    undoBtn.classList.add("hidden");
+  }
+
+  intro.classList.add("hidden");
+  moduleIntro.classList.add("hidden");
+  doneSection.classList.add("hidden");
+  trialSection.classList.remove("hidden");
 }
 
 function showModuleIntro() {
@@ -119,125 +163,130 @@ async function startExperiment() {
 }
 
 async function loadTrial() {
+  if (!participant || isLoadingTrial) return;
+
   const dim = DIMENSIONS[currentDimensionIndex];
-  const res = await fetch("/api/get-trial", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      participantId: participant.participantId,
-      dimension: dim.key,
-      images: IMAGE_LIST,
-      targetTrials: dim.targetTrials,
-      label: dim.label
-    })
-  });
+  const seq = ++requestSeq;
 
-  const data = await res.json();
+  isLoadingTrial = true;
+  setActionDisabled(true);
 
-  if (!res.ok) {
-    alert(data.message || "获取题目失败");
-    return;
-  }
+  try {
+    const res = await fetch("/api/get-trial", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        participantId: participant.participantId,
+        dimension: dim.key,
+        images: IMAGE_LIST,
+        targetTrials: dim.targetTrials,
+        label: dim.label
+      })
+    });
 
-  if (data.doneDimension) {
-    currentDimensionIndex += 1;
-    if (currentDimensionIndex >= DIMENSIONS.length) {
-      trialSection.classList.add("hidden");
-      moduleIntro.classList.add("hidden");
-      doneSection.classList.remove("hidden");
-      document.getElementById("doneText").textContent = `受试者编号：${participant.participantId}`;
+    const data = await res.json();
+
+    if (seq !== requestSeq) return;
+
+    if (!res.ok) {
+      alert(data.message || "获取题目失败");
       return;
     }
-    showModuleIntro();
-    return;
-  }
 
-  currentTrial = data;
-  moduleIntro.classList.add("hidden");
-  intro.classList.add("hidden");
-  trialSection.classList.remove("hidden");
+    if (data.doneDimension) {
+      currentDimensionIndex += 1;
 
-  participantText.textContent = `受试者编号：${participant.participantId}`;
-  progressText.textContent = `进度：${data.progress}/${data.total}`;
-  promptText.textContent = `以下两张图片中，哪一张你认为更具有${dim.label}？`;
+      if (currentDimensionIndex >= DIMENSIONS.length) {
+        trialSection.classList.add("hidden");
+        moduleIntro.classList.add("hidden");
+        doneSection.classList.remove("hidden");
+        document.getElementById("doneText").textContent = `受试者编号：${participant.participantId}`;
+        return;
+      }
 
-  leftImg.src = `./images/${data.leftImage}`;
-  rightImg.src = `./images/${data.rightImage}`;
+      showModuleIntro();
+      return;
+    }
 
-  if (data.canUndo) {
-    undoBtn.classList.remove("hidden");
-  } else {
-    undoBtn.classList.add("hidden");
+    renderTrialScreen(dim, data);
+  } finally {
+    if (seq === requestSeq) {
+      isLoadingTrial = false;
+      setActionDisabled(false);
+    }
   }
 }
 
 async function submitChoice(choice) {
+  if (!currentTrial || isSubmittingChoice || isLoadingTrial) return;
+
   const dim = DIMENSIONS[currentDimensionIndex];
-  const res = await fetch("/api/submit-trial", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      participantId: participant.participantId,
-      dimension: dim.key,
-      leftImage: currentTrial.leftImage,
-      rightImage: currentTrial.rightImage,
-      choice,
-      servedAt: currentTrial.servedAt
-    })
-  });
+  isSubmittingChoice = true;
+  setActionDisabled(true);
 
-  const data = await res.json();
-  if (!res.ok) {
-    alert(data.message || "提交失败");
-    return;
+  try {
+    const res = await fetch("/api/submit-trial", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        participantId: participant.participantId,
+        dimension: dim.key,
+        leftImage: currentTrial.leftImage,
+        rightImage: currentTrial.rightImage,
+        choice,
+        servedAt: currentTrial.servedAt,
+        trialId: currentTrial.trialId
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.message || "提交失败");
+      return;
+    }
+
+    currentTrial = null;
+    await loadTrial();
+  } finally {
+    isSubmittingChoice = false;
+    if (!isLoadingTrial) {
+      setActionDisabled(false);
+    }
   }
-
-  await loadTrial();
 }
 
 async function undoLastTrial() {
+  if (!participant || isUndoingTrial || isLoadingTrial || isSubmittingChoice) return;
+
   const dim = DIMENSIONS[currentDimensionIndex];
-  const res = await fetch("/api/undo-trial", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      participantId: participant.participantId,
-      dimension: dim.key,
-      targetTrials: dim.targetTrials
-    })
-  });
+  isUndoingTrial = true;
+  setActionDisabled(true);
 
-  const data = await res.json();
-  if (!res.ok) {
-    alert(data.message || "退回失败");
-    return;
+  try {
+    const res = await fetch("/api/undo-trial", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        participantId: participant.participantId,
+        dimension: dim.key,
+        targetTrials: dim.targetTrials
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.message || "退回失败");
+      return;
+    }
+
+    renderTrialScreen(dim, data);
+  } finally {
+    isUndoingTrial = false;
+    setActionDisabled(false);
   }
-
-  currentTrial = {
-    leftImage: data.leftImage,
-    rightImage: data.rightImage,
-    servedAt: data.servedAt
-  };
-
-  participantText.textContent = `受试者编号：${participant.participantId}`;
-  progressText.textContent = `进度：${data.progress}/${data.total}`;
-  promptText.textContent = `以下两张图片中，哪一张你认为更具有${dim.label}？`;
-
-  leftImg.src = `./images/${data.leftImage}`;
-  rightImg.src = `./images/${data.rightImage}`;
-
-  if (data.canUndo) {
-    undoBtn.classList.remove("hidden");
-  } else {
-    undoBtn.classList.add("hidden");
-  }
-
-  intro.classList.add("hidden");
-  moduleIntro.classList.add("hidden");
-  doneSection.classList.add("hidden");
-  trialSection.classList.remove("hidden");
 }
-
 
 document.getElementById("startBtn").addEventListener("click", startExperiment);
 enterModuleBtn.addEventListener("click", loadTrial);
