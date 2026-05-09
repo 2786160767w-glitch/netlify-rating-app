@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { getStore } from "@netlify/blobs";
 
 function recountCompleted(trials, targetMap) {
@@ -50,14 +51,22 @@ export default async (req, context) => {
     await trialsStore.setJSON(participantId, participantTrials);
 
     const sessionData = await sessionsStore.get(participantId, { type: "json" });
-    if (sessionData) {
-      if (!sessionData.redoMap) sessionData.redoMap = {};
-      sessionData.redoMap[dimension] = {
-        leftImage: removed.leftImage,
-        rightImage: removed.rightImage
-      };
-      await sessionsStore.setJSON(participantId, sessionData);
+    if (!sessionData) {
+      throw new Error("session not found");
     }
+    if (!sessionData.activeTrialMap) {
+      sessionData.activeTrialMap = {};
+    }
+
+    const newActiveTrial = {
+      trialId: crypto.randomUUID(),
+      leftImage: removed.leftImage,
+      rightImage: removed.rightImage,
+      servedAt: new Date().toISOString()
+    };
+
+    sessionData.activeTrialMap[dimension] = newActiveTrial;
+    await sessionsStore.setJSON(participantId, sessionData);
 
     const statsKey = `stats_${dimension}`;
     const stats =
@@ -87,9 +96,7 @@ export default async (req, context) => {
         participantTrials,
         participantMeta.targetMap || {}
       );
-      participantMeta.completedAt = participantMeta.completed
-        ? participantMeta.completedAt
-        : null;
+      participantMeta.completedAt = participantMeta.completed ? participantMeta.completedAt : null;
       await participantsStore.setJSON(participantId, participantMeta);
     }
 
@@ -98,9 +105,10 @@ export default async (req, context) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        leftImage: removed.leftImage,
-        rightImage: removed.rightImage,
-        servedAt: new Date().toISOString(),
+        trialId: newActiveTrial.trialId,
+        leftImage: newActiveTrial.leftImage,
+        rightImage: newActiveTrial.rightImage,
+        servedAt: newActiveTrial.servedAt,
         progress: dimTrialsAfterUndo.length + 1,
         total: targetTrials,
         canUndo: dimTrialsAfterUndo.length > 0
