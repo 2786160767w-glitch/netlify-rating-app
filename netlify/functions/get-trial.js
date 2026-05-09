@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { getStore } from "@netlify/blobs";
 
 function pairKey(a, b) {
@@ -62,8 +63,8 @@ export default async (req, context) => {
     const sessionsStore = getStore("sessions");
     const metaStore = getStore("meta");
 
-    const rawTrials = await trialsStore.get(participantId, { type: "json" });
-    const participantTrials = rawTrials || [];
+    const participantTrials =
+      (await trialsStore.get(participantId, { type: "json" })) || [];
     const dimTrials = participantTrials.filter((t) => t.dimension === dimension);
 
     if (dimTrials.length >= targetTrials) {
@@ -81,13 +82,18 @@ export default async (req, context) => {
       throw new Error("session not found");
     }
 
-    if (sessionData.redoMap && sessionData.redoMap[dimension]) {
-      const redoTrial = sessionData.redoMap[dimension];
+    if (!sessionData.activeTrialMap) {
+      sessionData.activeTrialMap = {};
+    }
+
+    const existingActive = sessionData.activeTrialMap[dimension];
+    if (existingActive) {
       return new Response(
         JSON.stringify({
-          leftImage: redoTrial.leftImage,
-          rightImage: redoTrial.rightImage,
-          servedAt: new Date().toISOString(),
+          trialId: existingActive.trialId,
+          leftImage: existingActive.leftImage,
+          rightImage: existingActive.rightImage,
+          servedAt: existingActive.servedAt,
           progress: dimTrials.length + 1,
           total: targetTrials,
           canUndo: dimTrials.length > 0
@@ -100,8 +106,10 @@ export default async (req, context) => {
     }
 
     const statsKey = `stats_${dimension}`;
-    const rawStats = await metaStore.get(statsKey, { type: "json" });
-    let stats = rawStats || initStats(images);
+    let stats = await metaStore.get(statsKey, { type: "json" });
+    if (!stats) {
+      stats = initStats(images);
+    }
 
     images.forEach((img) => {
       if (stats.imageCounts[img] === undefined) {
@@ -110,12 +118,22 @@ export default async (req, context) => {
     });
 
     const pair = chooseControlledPair(images, dimTrials, stats);
+    const activeTrial = {
+      trialId: crypto.randomUUID(),
+      leftImage: pair.leftImage,
+      rightImage: pair.rightImage,
+      servedAt: new Date().toISOString()
+    };
+
+    sessionData.activeTrialMap[dimension] = activeTrial;
+    await sessionsStore.setJSON(participantId, sessionData);
 
     return new Response(
       JSON.stringify({
-        leftImage: pair.leftImage,
-        rightImage: pair.rightImage,
-        servedAt: new Date().toISOString(),
+        trialId: activeTrial.trialId,
+        leftImage: activeTrial.leftImage,
+        rightImage: activeTrial.rightImage,
+        servedAt: activeTrial.servedAt,
         progress: dimTrials.length + 1,
         total: targetTrials,
         canUndo: dimTrials.length > 0
