@@ -21,7 +21,7 @@ function isParticipantCompleted(trials, targetMap) {
     countMap[t.dimension] = (countMap[t.dimension] || 0) + 1;
   }
 
-  for (const dimKey of Object.keys(targetMap)) {
+  for (const dimKey of Object.keys(targetMap || {})) {
     if ((countMap[dimKey] || 0) < targetMap[dimKey]) {
       return false;
     }
@@ -38,8 +38,34 @@ export default async (req, context) => {
       leftImage,
       rightImage,
       choice,
-      servedAt
+      servedAt,
+      trialId
     } = body;
+
+    const trialsStore = getStore("trials");
+    const sessionsStore = getStore("sessions");
+    const metaStore = getStore("meta");
+    const participantsStore = getStore("participants");
+
+    const sessionData = await sessionsStore.get(participantId, { type: "json" });
+    if (!sessionData || !sessionData.activeTrialMap || !sessionData.activeTrialMap[dimension]) {
+      return new Response(
+        JSON.stringify({ message: "当前题目状态无效，请刷新后重试" }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const activeTrial = sessionData.activeTrialMap[dimension];
+    if (
+      activeTrial.trialId !== trialId ||
+      activeTrial.leftImage !== leftImage ||
+      activeTrial.rightImage !== rightImage
+    ) {
+      return new Response(
+        JSON.stringify({ message: "题目已过期或已提交，请勿连续快速点击" }),
+        { status: 409, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const chosenImage = choice === "left" ? leftImage : rightImage;
     const submittedAt = new Date().toISOString();
@@ -47,11 +73,6 @@ export default async (req, context) => {
       0,
       (new Date(submittedAt).getTime() - new Date(servedAt).getTime()) / 1000
     );
-
-    const trialsStore = getStore("trials");
-    const sessionsStore = getStore("sessions");
-    const metaStore = getStore("meta");
-    const participantsStore = getStore("participants");
 
     const participantTrials =
       (await trialsStore.get(participantId, { type: "json" })) || [];
@@ -72,15 +93,14 @@ export default async (req, context) => {
     participantTrials.push(record);
     await trialsStore.setJSON(participantId, participantTrials);
 
-    const sessionData = await sessionsStore.get(participantId, { type: "json" });
-    if (sessionData && sessionData.redoMap && sessionData.redoMap[dimension]) {
-      delete sessionData.redoMap[dimension];
-      await sessionsStore.setJSON(participantId, sessionData);
-    }
+    delete sessionData.activeTrialMap[dimension];
+    await sessionsStore.setJSON(participantId, sessionData);
 
     const statsKey = `stats_${dimension}`;
-    const rawStats = await metaStore.get(statsKey, { type: "json" });
-    const stats = rawStats || initStats();
+    let stats = await metaStore.get(statsKey, { type: "json" });
+    if (!stats) {
+      stats = initStats();
+    }
 
     stats.imageCounts[leftImage] = (stats.imageCounts[leftImage] || 0) + 1;
     stats.imageCounts[rightImage] = (stats.imageCounts[rightImage] || 0) + 1;
@@ -93,11 +113,7 @@ export default async (req, context) => {
       throw new Error("participant meta not found");
     }
 
-    const completed = isParticipantCompleted(
-      participantTrials,
-      participantMeta.targetMap || {}
-    );
-
+    const completed = isParticipantCompleted(participantTrials, participantMeta.targetMap || {});
     participantMeta.completed = completed;
     participantMeta.completedAt = completed ? new Date().toISOString() : null;
     await participantsStore.setJSON(participantId, participantMeta);
